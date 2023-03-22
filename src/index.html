@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <style>
+    html {
+      height: 100%;
+    }
+    
+    body {
+      font-family: sans-serif;
+      background-color: #1a1a1a;
+      color: #a2c2f2;
+      font-family: "Helvetica", sans-serif;
+      height: 100%;
+    }
+
+    h1,
+    h2,
+    h3,
+    h4,
+    h5,
+    h6 {
+      font-family: "Helvetica", sans-serif;
+    }
+
+    textarea,
+    input,
+    select {
+      width: 100%;
+      box-sizing: border-box;
+      border-radius: 4px;
+      padding: 8px;
+      border: 1px solid #b1c4d1;
+      background-color: #222;
+      color: #a2c2f2;
+    }
+
+    textarea {
+      height: 100px;
+      resize: none;
+    }
+
+    label {
+      display: block;
+      font-weight: bold;
+      margin-bottom: 5px;
+      color: #97d8eb;
+    }
+
+    button {
+      margin-top: 10px;
+      background-color: #97d8eb;
+      border: none;
+      border-radius: 4px;
+      padding: 8px 12px;
+      cursor: pointer;
+      box-shadow: 0 0 5px rgba(0, 0, 0, 0.5);
+      transition: all 0.3s;
+    }
+
+    button:hover {
+      background-color: #337ca0;
+      transform: translateY(-1px);
+      box-shadow: 0 3px 6px rgba(0, 0, 0, 0.5);
+    }
+
+    button.secondary {
+      background-color: #222;
+      border: 1px solid #b1c4d1;
+      color: #a2c2f2;
+      border-radius: 4px;
+      padding: 8px;
+      cursor: pointer;
+      box-shadow: 0 0 5px rgba(0, 0, 0, 0.5);
+      transition: all 0.3s;
+      margin-bottom: 2px;
+    }
+
+    #response {
+      margin-top: 20px;
+      font-weight: bold;
+      white-space: pre-wrap;
+    }
+
+    #loader {
+      display: none;
+    }
+
+    .add-buttons {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 10px;
+    }
+
+    .add-buttons button {
+      flex: 1;
+      margin-right: 5px;
+    }
+
+    .add-buttons button:last-child {
+      margin-right: 0;
+    }
+
+    .tag {
+      display: inline-block;
+      background-color: #2a2a2a;
+      border: 1px solid #97d8eb;
+      color: #97d8eb;
+      border-radius: 4px;
+      padding: 4px 8px;
+      font-size: 14px;
+      margin-right: 2px;
+      box-shadow: 0 0 5px rgba(0, 0, 0, 0.5);
+    }
+
+    .remove-token {
+      cursor: pointer;
+      margin-left: 5px;
+    }
+
+    .section-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 5px;
+    }
+
+    #token {
+      box-shadow: 0 0 5px rgba(0, 0, 0, 0.5);
+      width: 100px;
+    }
+
+    #model {
+      box-shadow: 0 0 5px rgba(0, 0, 0, 0.5);
+      width: 100px;
+    }
+
+    #model-section {
+      display: none;
+    }
+
+    #full-prompt-section {
+      max-height: 200px;
+      overflow: auto;
+    }
+
+    #full-prompt {
+      background-color: #2a2a2a;
+      border: 1px solid #97d8eb;
+      color: #97d8eb;
+      border-radius: 4px;
+      padding: 4px 8px;
+      margin: 2px;
+      font-size: 14px;
+      white-space: pre-wrap;
+      box-shadow: 0 0 5px rgba(0, 0, 0, 0.5);
+    }
+
+    .main-container {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+    }
+
+    .conversation-container {
+      display: flex;
+      flex-grow: 1;
+      overflow: auto;
+      flex-direction: column-reverse;
+    }
+
+    .conversation-section {
+      flex-grow: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      padding-bottom: 10px;
+    }
+
+    #conversation {
+      background-color: #2a2a2a;
+      flex-grow: 1;
+      border-radius: 4px;
+      padding: 8px;
+      margin-bottom: 10px;
+      border: 1px solid #97d8eb;
+      overflow: auto;
+      display: flex;
+      flex-direction: column;
+    }
+
+    hr {
+      border: 1px solid #97d8eb;
+      margin: 20px 0;
+    }
+
+    button:focus,
+    input:focus,
+    select:focus {
+      outline: none;
+      box-shadow: 0 0 3px #3c8dad;
+    }
+
+    .message {
+      background-color: #0a8dff;
+      border-radius: 8px;
+      color: #fff;
+      display: inline-block;
+      font-size: 14px;
+      margin: 4px 0;
+      padding: 6px 12px;
+      max-width: 100%;
+      word-wrap: break-word;
+      position: relative;
+    }
+    
+    .message:not(.markdown) {
+      white-space: pre-wrap;
+    }
+    
+    .message:before {
+      content: "";
+      position: absolute;
+      width: 0;
+      height: 0;
+      border-width: 5px;
+      border-style: solid;
+      border-color: transparent;
+      left: -10px;
+      top: 6px;
+    }
+
+    .user-message {
+      background-color: #3d95ce;
+      float: right;
+    }
+
+    .assistant-message {
+      background-color: #353535;
+      float: left;
+      color: #f0f0f0;
+    }
+
+    .token-section {
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .request-container {
+      flex: 1;
+    }
+
+    button.secondary:hover {
+      background-color: #337ca0;
+      transform: translateY(-1px);
+      box-shadow: 0 3px 6px rgba(0, 0, 0, 0.5);
+    }
+
+    .add-buttons {
+      justify-content: flex-start;
+      margin-bottom: 10px;
+    }
+
+    .add-buttons button {
+      margin-right: 5px;
+    }
+
+    @keyframes spinner {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    .spinner {
+      display: inline-block;
+      width: 24px;
+      height: 24px;
+      border-width: 2px;
+      border-style: solid;
+      border-color: rgba(255, 255, 255, 0.2) rgba(255, 255, 255, 0.8);
+      border-radius: 50%;
+      animation: spinner 0.8s linear infinite;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="main-container">
+    <section class="section-header">
+      <h1>PromptMate</h1>
+      <div>
+        <label for="token">OpenAI user token</label>
+        <input id="token" type="password" placeholder="Enter your OpenAI token here..." />
+        <button id="save-token">Save token</button>
+      </div>
+      <div id="model-section">
+        <label for="model">Model</label>
+        <select id="model" name="model"></select>
+      </div>
+    </section>
+    <section class="conversation-section">
+      <div class="section-header">
+        <h2>Conversation</h2>
+        <button id="clear-conversation">Clear conversation</button>
+        <button id="toggle-markdown">Toggle Markdown</button>
+      </div>
+      <div id="conversation">
+        <div class="conversation-container">
+        </div>
+        <div id="loading-spinner" class="spinner" style="display: none"></div>
+      </div>
+      <div class="token-section">
+        <div class="request-container">
+          <textarea id="userRequest" type="text" placeholder="Enter your request here..."></textarea>
+          <div class="code-tokens-and-buttons">
+            <div id="prompt-display"></div>
+            <div class="add-prompt-buttons">
+              <button class="secondary" id="addFile">Add File</button>
+              <button class="secondary" id="addFunction">Add Function</button>
+              <button class="secondary" id="addSelection">Add Selection</button>
+            </div>
+          </div>
+          <div id="full-prompt-section">
+            <pre style="display: none" id="full-prompt"></pre>
+          </div>
+          <div>
+            <span id="loader">Loading...</span>
+            <button style="display: none" id="submit">Ask GPT-4</button>
+            <p id="missing-token-message">Missing Token</p>
+            <button id="show-prompt" class="secondary">Show raw prompt</button>
+          </div>
+        </div>
+      </div>
+    </section>
+    <script>
+      const vscode = acquireVsCodeApi();
+
+      const token = document.getElementById("token");
+      const promptDisplay = document.getElementById("prompt-display");
+      const userRequest = document.getElementById("userRequest");
+      const submit = document.getElementById("submit");
+      const conversation = document.querySelector(".conversation-container");
+      const loader = document.getElementById("loader");
+      const addFile = document.getElementById("addFile");
+      const addFunction = document.getElementById("addFunction");
+      const addSelection = document.getElementById("addSelection");
+      const fullPrompt = document.getElementById("full-prompt");
+      const modelSelector = document.getElementById("model");
+      const modelSection = document.getElementById("model-section");
+      const showPrompt = document.getElementById("show-prompt");
+      const missingTokenMessage = document.getElementById(
+        "missing-token-message"
+      );
+      const saveToken = document.getElementById("save-token");
+      const clearConversation = document.getElementById("clear-conversation");
+      const toggleMarkdownButton = document.getElementById("toggle-markdown");
+      const loadingSpinner = document.getElementById("loading-spinner");
+
+      let modelValue;
+      let modelsLoaded = false;
+
+      userRequest.addEventListener("keyup", () => {
+        vscode.postMessage({
+          type: "updateQuestion",
+          userRequest: userRequest.value,
+        });
+      });
+
+      saveToken.addEventListener("click", () => {
+        vscode.postMessage({
+          type: "updateToken",
+          token: token.value,
+        });
+      });
+
+      submit.addEventListener("click", () => {
+        vscode.postMessage({
+          type: "askGPT",
+          userRequest: userRequest.value,
+          token: token.value,
+        });
+      });
+
+      addFile.addEventListener("click", () => {
+        vscode.postMessage({
+          type: "addPrompt",
+          prompt: "file",
+        });
+      });
+
+      addFunction.addEventListener("click", () => {
+        vscode.postMessage({
+          type: "addPrompt",
+          prompt: "function",
+        });
+      });
+
+      addSelection.addEventListener("click", () => {
+        vscode.postMessage({
+          type: "addPrompt",
+          prompt: "selection",
+        });
+      });
+
+      model.addEventListener("change", () => {
+        vscode.postMessage({
+          type: "updateModel",
+          model: model.value,
+        });
+        submit.innerText = `Ask ${model.value}`;
+      });
+
+      showPrompt.addEventListener("click", () => {
+        fullPrompt.style.display =
+          fullPrompt.style.display === "none" ? "block" : "none";
+        showPrompt.innerText =
+          fullPrompt.style.display === "none"
+            ? "Show raw prompt"
+            : "Hide raw prompt";
+      });
+
+      clearConversation.addEventListener("click", () => {
+        vscode.postMessage({
+          type: "clearConversation",
+        });
+      });
+
+      toggleMarkdownButton.addEventListener("click", () => {
+        vscode.postMessage({ type: "toggleMarkdown" });
+      });
+
+      window.addEventListener("message", (event) => {
+        if (event.data.type === "prompt") {
+          promptDisplay.innerHTML = "";
+          event.data.prompt.forEach((prompt, index) => {
+            promptDisplay.appendChild(genPromptElement(prompt, index));
+          });
+        } else if (event.data.type === "conversationUpdate") {
+          conversation.innerHTML = "";
+
+          if (event.data.conversationHistory.length === 0) {
+            clearConversation.style.display = "none";
+            return;
+          }
+
+          event.data.conversationHistory.forEach((message, index) => {
+            const messageElement = document.createElement("div");
+            messageElement.className = "message";
+            messageElement.innerHTML = message.content;
+            if (message.role === "user") {
+              messageElement.classList.add("user-message");
+            } else {
+              messageElement.classList.add("assistant-message");
+            }
+            if(message.isMarkdown) {
+              messageElement.classList.add("markdown");
+            }else{
+              messageElement.classList.remove("markdown");
+            }
+
+            if (message.codePrompt) {
+              const codeTokensElement = document.createElement("div");
+              message.codePrompt.forEach((prompt) => {
+                codeTokensElement.appendChild(genPromptElement(prompt));
+              });
+              messageElement.appendChild(codeTokensElement);
+            }
+
+            conversation.prepend(messageElement);
+          });
+
+          clearConversation.style.display = "block";
+        } else if (event.data.type === "loading") {
+          loadingSpinner.style.display = event.data.loading ? "block" : "none";
+          submit.disabled = event.data.loading;
+        } else if (event.data.type === "token") {
+          if (event.data.token !== undefined) {
+            token.value = event.data.token;
+          } else {
+            token.value = "";
+          }
+        } else if (event.data.type === "currentFullPrompt") {
+          fullPrompt.innerText = event.data.fullPrompt;
+        } else if (event.data.type === "models") {
+          if (event.data.models.length === 0) {
+            modelSection.style.display = "none";
+            return;
+          }
+          modelSection.style.display = "block";
+          model.innerHTML = "";
+          event.data.models.forEach((model) => {
+            const option = document.createElement("option");
+            option.value = model;
+            option.innerText = model;
+            modelSelector.appendChild(option);
+            modelSelector.value = modelValue;
+          });
+          if (modelSelector.value === "" && event.data.models.length > 0) {
+            modelSelector.value = event.data.models[0];
+          }
+          modelsLoaded = true;
+          submit.style.display = "";
+          missingTokenMessage.style.display = "none";
+        } else if (event.data.type === "model") {
+          modelValue = event.data.model;
+          modelSelector.value = event.data.model;
+          if (!modelsLoaded) {
+            return;
+          }
+          submit.style.display = "";
+          submit.innerText = `Ask ${event.data.model}`;
+        } else if (event.data.type === "userRequest") {
+          userRequest.value = event.data.userRequest;
+        }
+      });
+
+      const genPromptElement = (prompt, removableIndex = false) => {
+        const promptElement = document.createElement("span");
+        promptElement.classList.add("tag");
+        if (prompt.type === "file") {
+          promptElement.innerText = `File: ${prompt.location}`;
+        } else if (prompt.type === "function") {
+          promptElement.innerText = `Function: ${prompt.name} (${prompt.location}:${prompt.startLine})`;
+        } else if (prompt.type === "selection") {
+          promptElement.innerText = `Selection: ${prompt.location}:${prompt.startLine}`;
+        }
+        if (removableIndex !== false) {
+          // Add the X button to the prompt element
+          const removeTokenButton = document.createElement("span");
+          removeTokenButton.classList.add("remove-token");
+          removeTokenButton.innerText = "X";
+          removeTokenButton.style.marginLeft = "5px";
+          removeTokenButton.style.cursor = "pointer";
+          removeTokenButton.addEventListener("click", () => {
+            vscode.postMessage({ type: "removePrompt", index: removableIndex });
+          });
+          promptElement.appendChild(removeTokenButton);
+        }
+        return promptElement;
+      };
+
+      vscode.postMessage({ type: "init" });
+    </script>
+</body>
+
+</html>

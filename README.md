@@ -13,7 +13,7 @@ Install [PromptMate for VS Code](https://marketplace.visualstudio.com/items?item
 - Supports multiple models including GPT-4. 🧠
 - Supports adding entire file content, selected functions, and selected text to the prompt. 📌
 
-![Usage example](https://raw.githubusercontent.com/MateusZitelli/PromptMate/main/resources/usage.gif)
+![Image](https://raw.githubusercontent.com/MateusZitelli/PromptMate/main/resources/shot.png)
 
 ## Requirements 📋
 
@@ -44,6 +44,11 @@ Supercharge your development experience with these easy-to-use commands and shor
 	- Want your AI buddy to help with just a small piece of code? Easy peasy! Use the command palette or right-click in the editor, then choose "PromptMate: Add current selection" from the context menu. Remember the shortcut: `CTRL+ALT+S` on Windows/Linux and `CMD+ALT+S` on Mac. ✨
 
 With your desired files, functions, and selections added to your prompt, go ahead and ask questions or request code snippets from your AI assistant in the PromptMate panel. Get ready for awesome responses tailored to your provided context! 🤖💬
+
+## See it in action
+
+![Usage example](https://raw.githubusercontent.com/MateusZitelli/PromptMate/main/resources/usage.gif)
+
 
 Make your coding sessions more fun and efficient with PromptMate! 🎉
 

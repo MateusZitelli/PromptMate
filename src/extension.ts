@@ -1,45 +1,19 @@
 import * as vscode from "vscode";
 import { micromark } from "micromark";
-import * as ts from "typescript";
+import {parseLine, Command, parseCommands} from "./commands/parse";
 import "dotenv/config";
-import path = require("path");
 import html from "./index.html";
 import { askGPT, getModels } from "./services";
+import { createExecuteCommands, Message } from "./commands/execute";
+import { handleAddPromptEvent, CodePrompt as CodePrompt } from "./prompt";
 
-interface FunctionPrompt {
-  type: "function";
-  name: string;
-  location: string;
-  content: string;
-  startLine: number;
-}
 
-interface FilePrompt {
-  type: "file";
-  location: string;
-  content: string;
-}
-
-interface SelectionPrompt {
-  type: "selection";
-  location: string;
-  content: string;
-  startLine: number;
-}
-
-interface Message {
-  role: "user" | "assistant" | "system";
-  codePrompt?: Prompt[];
-  text: string;
-}
-
-type Prompt = FunctionPrompt | FilePrompt | SelectionPrompt;
+// This project is a VS Code extension that implements your commands. Explore the project and implement a @find command to search text in the workspace at the file prompt-mate/src/extension.ts.
 
 export function activate(context: vscode.ExtensionContext) {
   let panel: vscode.WebviewPanel | undefined;
   let conversationHistory: Message[] = [];
-  let loading = false;
-  let codePrompt: Prompt[] = [];
+  let codePrompts: CodePrompt[] = [];
   let lastActiveEditor: vscode.TextEditor | undefined =
     vscode.window.activeTextEditor;
   let currentUserRequest = "";
@@ -50,6 +24,9 @@ export function activate(context: vscode.ExtensionContext) {
   );
   let renderMarkdown = true;
   let model = context.globalState.get("openaiModel", "gpt-3.5-turbo");
+  let loading = false;
+  let lastConversationLength = 0;
+  let memory = "";
 
   const loadUI = () => {
     if (panel) {
@@ -72,13 +49,13 @@ export function activate(context: vscode.ExtensionContext) {
         context.globalState.update("openaiModel", message.model);
         model = message.model;
       } else if (message.type === "addPrompt") {
-        codePrompt = await handleAddPromptEvent(
+        codePrompts = await handleAddPromptEvent(
           lastActiveEditor,
-          codePrompt,
+          codePrompts,
           message.prompt
         );
       } else if (message.type === "removePrompt") {
-        codePrompt.splice(message.index, 1);
+        codePrompts.splice(message.index, 1);
       } else if (message.type === "updateQuestion") {
         currentUserRequest = message.userRequest;
       } else if (message.type === "init") {
@@ -89,6 +66,8 @@ export function activate(context: vscode.ExtensionContext) {
         conversationHistory = [];
       }else if (message.type === "toggleMarkdown") { 
         handleToggleMarkdownEvent();
+      }else if (message.type === "deleteMessage") {
+        conversationHistory.splice(message.index, 1);
       }
 
       await updateUI();
@@ -96,24 +75,28 @@ export function activate(context: vscode.ExtensionContext) {
   };
 
   const updateUI = async () => {
-    await panel?.webview.postMessage({
-      type: "conversationUpdate",
-      conversationHistory: conversationHistory.map((m) => ({
-        role: m.role,
-        content: renderMarkdown ? micromark(m.text) : m.text,
-        isMarkdown: renderMarkdown,
-        codePrompt: m.codePrompt ? [...m.codePrompt] : undefined,
-      })),
-    });
+    // we do this to avoid the conversation UI scrolling to the top on every UI update
+    if (lastConversationLength !== conversationHistory.length) {
+      await panel?.webview.postMessage({
+        type: "conversationUpdate",
+        conversationHistory: conversationHistory.map((m) => ({
+          role: m.role,
+          content: renderMarkdown ? micromark(m.text) : m.text,
+          isMarkdown: renderMarkdown,
+          codePrompt: m.codePrompt ? [...m.codePrompt] : undefined,
+        })),
+      });
+      lastConversationLength = conversationHistory.length;
+    }
     await panel?.webview.postMessage({ type: "loading", loading });
     await panel?.webview.postMessage({
       type: "prompt",
-      prompt: codePrompt ? [...codePrompt] : undefined,
+      prompt: codePrompts ? [...codePrompts] : undefined,
     });
     await panel?.webview.postMessage({ type: "token", token });
     await panel?.webview.postMessage({
       type: "currentFullPrompt",
-      fullPrompt: buildPrompt(codePrompt, currentUserRequest),
+      fullPrompt: buildPrompt(codePrompts, currentUserRequest),
     });
     await panel?.webview.postMessage({ type: "model", model });
     await panel?.webview.postMessage({ type: "models", models });
@@ -123,19 +106,21 @@ export function activate(context: vscode.ExtensionContext) {
     renderMarkdown = !renderMarkdown;
     updateUI();
   };
-      
 
   const handleAskGPTEvent = async (message: any) => {
     if (loading) {
       return;
     }
+    let error = false;
     loading = true;
     conversationHistory.push({
       role: "user",
-      codePrompt: [...codePrompt],
+      codePrompt: [...codePrompts],
       text: message.userRequest,
     });
+
     await updateUI();
+
     const response = await askGPT(
       message.token,
       conversationHistory.map((m) => ({
@@ -144,21 +129,87 @@ export function activate(context: vscode.ExtensionContext) {
       })),
       model
     );
+
     if (!response.ok) {
       conversationHistory.splice(-1);
-      vscode.window.showErrorMessage("Failed to fetch response, try again.");
-    } else {
-      conversationHistory.push({
-        role: "assistant",
-        text: response.data,
-      });
-      clearCurrentPrompt();
+      if (response.code === "context_length_exceeded") {
+        vscode.window.showErrorMessage(
+          "Conversation length exceeded, remove some messages."
+        );
+      } else {
+        vscode.window.showErrorMessage("Failed to fetch response, try again.");
+      }
+      return;
     }
+
+    conversationHistory.push({
+      role: "assistant",
+      text: response.data,
+    });
+
+    clearCurrentPrompt();
+
+    const agentCommandsResult = await handleAgentCommands(response.data);
+
     loading = false;
+
+    if (!agentCommandsResult.ok) {
+      return;
+    }
+
+    if ((currentUserRequest.length > 0 || codePrompts.length > 0) && !error) {
+      await handleAskGPTEvent({
+        token: message.token,
+        userRequest: currentUserRequest,
+        codePrompt: [...codePrompts],
+      });
+    }
   };
+  
+  const handleAgentCommands = async (data: string) => {
+    const executeCommands = createExecuteCommands({
+      state: {
+        codePrompts,
+        currentUserRequest,
+        editor: vscode.window.activeTextEditor ?? lastActiveEditor,
+        panel,
+        memory,
+        conversationHistory,
+      },
+      actions: {
+        loadUI,
+      },
+    });
+
+    try {
+      // Execute the commands from the AI response.
+      const commands = parseCommands(data);
+      const newContext = await executeCommands(commands);
+      codePrompts = newContext.codePrompts;
+      currentUserRequest = newContext.currentUserRequest;
+      lastActiveEditor = newContext.editor;
+      return {ok: true};
+    } catch (e) {
+      if (e instanceof Error) {
+        currentUserRequest += e.message;
+        await panel?.webview.postMessage({
+          type: "userRequest",
+          userRequest: currentUserRequest,
+        });
+        vscode.window.showErrorMessage("Command error");
+        console.error(e);
+      } else {
+        throw e;
+      }
+      return {
+        ok: false
+      };
+    }
+  };
+  
 
   const clearCurrentPrompt = () => {
-    codePrompt = [];
+    codePrompts = [];
     currentUserRequest = "";
     panel?.webview.postMessage({
       type: "userRequest",
@@ -184,7 +235,7 @@ export function activate(context: vscode.ExtensionContext) {
       .filter((m) => m.id.includes("gpt-"))
       .map((m) => m.id);
   };
-
+  
   context.subscriptions.push(
     vscode.commands.registerCommand("promptmate.open", async () => {
       loadUI();
@@ -196,10 +247,10 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand("promptmate.addFile", async () => {
       const promptToAdd = await handleAddPromptEvent(
         lastActiveEditor,
-        codePrompt,
+        codePrompts,
         "file"
       );
-      codePrompt = promptToAdd;
+      codePrompts = promptToAdd;
       loadUI();
       await updateUI();
     })
@@ -209,10 +260,10 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand("promptmate.addFunction", async () => {
       const promptToAdd = await handleAddPromptEvent(
         lastActiveEditor,
-        codePrompt,
+        codePrompts,
         "function"
       );
-      codePrompt = promptToAdd;
+      codePrompts = promptToAdd;
       loadUI();
       await updateUI();
     })
@@ -222,15 +273,50 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand("promptmate.addSelection", async () => {
       const promptToAdd = await handleAddPromptEvent(
         lastActiveEditor,
-        codePrompt,
+        codePrompts,
         "selection"
       );
-      codePrompt = promptToAdd;
+      codePrompts = promptToAdd;
       loadUI();
       await updateUI();
     })
   );
 
+  context.subscriptions.push(
+    vscode.commands.registerCommand("promptmate.runCommand", async () => {
+      const command = await vscode.window.showInputBox({
+        prompt: "Enter a command",
+      });
+
+      if(!command){
+        return;
+      }
+      const parsedLine = parseLine(command);
+      
+      if(!parsedLine){
+        return;
+      }
+
+      const [name, args] = parsedLine;
+      
+      const executeCommands = createExecuteCommands({
+        state: {
+          codePrompts,
+          currentUserRequest,
+          editor: vscode.window.activeTextEditor ?? lastActiveEditor,
+          panel,
+          memory,
+          conversationHistory,
+        },
+        actions: {
+          loadUI,
+        },
+      });
+
+      await executeCommands([new Command(name, args)]);
+    })
+  );
+        
   vscode.window.onDidChangeActiveTextEditor(
     (editor) => {
       if (editor) {
@@ -242,178 +328,34 @@ export function activate(context: vscode.ExtensionContext) {
   );
 }
 
-const buildPrompt = (codePrompt: Prompt[] | undefined, userRequest: string) => {
+const buildPrompt = (codePrompt: CodePrompt[] | undefined, userRequest: string) => {
   return codePrompt
     ? `${promptToText(codePrompt)}\n# User request\n${userRequest}`
     : userRequest;
 };
 
-const promptToText = (prompt: Prompt[]) => {
+const promptToText = (prompt: CodePrompt[]) => {
   return prompt
     .map((p) => {
+      const linedContent = addLineNumbers(p.content, "startLine" in p ? p.startLine : 0);
       if (p.type === "function") {
-        return `# function "${p.name}" @ "${p.location}:${p.startLine}"\n${p.content}\n`;
+        return `# function "${p.name}" @ "${p.location}:${p.startLine}"\n${linedContent}\n`;
       } else if (p.type === "file") {
-        return `# file @ "${p.location}"\n${p.content}\n`;
+        return `# file @ "${p.location}"\n${linedContent}\n`;
       } else if (p.type === "selection") {
-        return `# selection @ "${p.location}:${p.startLine}\n${p.content}\n`;
+        return `# selection @ "${p.location}:${p.startLine}\n${linedContent}\n`;
       }
     })
     .join("\n");
 };
 
-async function handleAddPromptEvent(
-  editor: vscode.TextEditor | undefined,
-  currentPrompt: Prompt[],
-  promptEvent: string
-): Promise<Prompt[]> {
-  if (!editor) {
-    vscode.window.showErrorMessage("No active editor found");
-    return currentPrompt;
-  }
+const addLineNumbers = (text: string, startLine: number) => {
+  return text
+    .split("\n")
+    .map((line, index) => `${startLine + index} ${line}`)
+    .join("\n");
+};
 
-  const document = editor.document;
-  const selection = editor.selection;
-  const startLine = selection.start.line;
-  const selectedText = document.getText(selection);
-  const workspaceFolder = vscode.workspace.getWorkspaceFolder(document.uri)?.uri
-    .fsPath;
-  const relativeDir = workspaceFolder
-    ? path.relative(workspaceFolder, document.fileName)
-    : document.fileName;
-
-  if (promptEvent === "file") {
-    // Handle adding entire file content to the prompt
-    const fileContent = document.getText();
-    // Update the prompt with the file content
-    return [
-      ...currentPrompt,
-      {
-        type: "file",
-        location: relativeDir,
-        content: fileContent,
-      },
-    ];
-  } else if (promptEvent === "function") {
-    // Handle adding selected function to the prompt
-    const sourceFile = ts.createSourceFile(
-      document.fileName,
-      document.getText(),
-      ts.ScriptTarget.Latest,
-      true
-    );
-
-    const selectedFunction = findSelectedFunction(
-      sourceFile,
-      selection.start.line,
-      selection.start.character
-    );
-
-    if (selectedFunction) {
-      // Update the prompt with the selected function
-      const startFunctionLine = sourceFile.getLineAndCharacterOfPosition(
-        selectedFunction.getStart()
-      ).line;
-      return [
-        ...currentPrompt,
-        {
-          type: "function",
-          name: selectedFunction.name?.getText() ?? "anonymous",
-          location: relativeDir,
-          content: selectedFunction.getText(),
-          startLine: startFunctionLine,
-        },
-      ];
-    } else {
-      vscode.window.showErrorMessage(
-        "No function found at the current selection"
-      );
-    }
-  } else if (promptEvent === "selection") {
-    // Handle adding selected text to the prompt
-    // Update the prompt with the selected text
-    console.log(selectedText);
-    return [
-      ...currentPrompt,
-      {
-        type: "selection",
-        location: relativeDir,
-        content: selectedText,
-        startLine,
-      },
-    ];
-  }
-  return currentPrompt;
-}
-
-// Add the findSelectedFunction function
-function findSelectedFunction(
-  node: ts.Node,
-  selectedLine: number,
-  selectedCharacter: number
-): ts.FunctionDeclaration | ts.ArrowFunction | undefined {
-  let foundFunction: ts.FunctionDeclaration | ts.ArrowFunction | undefined;
-
-  if (ts.isFunctionDeclaration(node) || ts.isArrowFunction(node)) {
-    try {
-      const start = node.getStart();
-      const end = node.getEnd();
-      const sourceFile = node.getSourceFile();
-
-      if (!sourceFile) {
-        console.error("sourceFile is undefined for node:", node);
-        return;
-      }
-      const startPosition = sourceFile.getLineAndCharacterOfPosition(start);
-      const endPosition = sourceFile.getLineAndCharacterOfPosition(end);
-
-      if (!startPosition || !endPosition) {
-        console.error(
-          "startPosition or endPosition is undefined for node:",
-          node
-        );
-        return;
-      }
-
-      if (
-        startPosition.line <= selectedLine &&
-        endPosition.line >= selectedLine
-      ) {
-        // Check if the function has any child nodes that include the selection
-        ts.forEachChild(node, (child) => {
-          const result = findSelectedFunction(
-            child,
-            selectedLine,
-            selectedCharacter
-          );
-          if (result) {
-            foundFunction = result;
-          }
-        });
-
-        // If no child nodes include the selection, return the current function
-        if (!foundFunction) {
-          foundFunction = node;
-        }
-      }
-    } catch (e) {
-      console.error("Error while processing node:", node, e);
-    }
-  } else {
-    ts.forEachChild(node, (child) => {
-      const result = findSelectedFunction(
-        child,
-        selectedLine,
-        selectedCharacter
-      );
-      if (result) {
-        foundFunction = result;
-      }
-    });
-  }
-
-  return foundFunction;
-}
 
 function createWebviewPanel(): vscode.WebviewPanel {
   const panel = vscode.window.createWebviewPanel(
@@ -435,3 +377,4 @@ function createWebviewPanel(): vscode.WebviewPanel {
 }
 
 export function deactivate() {}
+

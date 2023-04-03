@@ -44,6 +44,10 @@
       {
         "command": "promptmate.addSelection",
         "title": "PromptMate: Add current selection"
+      },
+      {
+        "command": "promptmate.runCommand",
+        "title": "PromptMate: Run command"
       }
     ],
     "menus": {

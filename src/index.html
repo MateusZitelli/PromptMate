@@ -320,7 +320,13 @@
     
     .configurations {
       display: flex;
+      flex-direction: row;
+    }
+    
+    .configuration {
+      display: flex;
       flex-direction: column;
+      justify-content: space-between;
       margin: 10px;
     }
   </style>
@@ -362,6 +368,16 @@
                 <button class="secondary" id="addFunction">Add Function</button>
                 <button class="secondary" id="addSelection">Add Selection</button>
               </div>
+              <div class="configurations">
+                <div class="configuration">
+                  <label for="autonomous">Autonomous mode</label>
+                  <input type="checkbox" id="autonomous" name="autonomous">
+                </div>
+                <div class="configuration">
+                  <label for="no-verification">Disable verification</label>
+                  <input type="checkbox" id="no-verification" name="no-verification">
+                </div>
+              </div>
             </div>
           </div>
           <div id="full-prompt-section">
@@ -399,6 +415,8 @@
       const clearConversation = document.getElementById("clear-conversation");
       const toggleMarkdownButton = document.getElementById("toggle-markdown");
       const loadingSpinner = document.getElementById("loading-spinner");
+      const autonomous = document.getElementById("autonomous");
+      const noVerification = document.getElementById("no-verification");
 
       let modelValue;
       let modelsLoaded = false;
@@ -471,6 +489,20 @@
 
       toggleMarkdownButton.addEventListener("click", () => {
         vscode.postMessage({ type: "toggleMarkdown" });
+      });
+      
+      autonomous.addEventListener("change", () => {
+        vscode.postMessage({
+          type: "updateAutonomous",
+          autonomous: autonomous.checked,
+        });
+      });
+
+      noVerification.addEventListener("change", () => {
+        vscode.postMessage({
+          type: "updateNoVerification",
+          noVerification: noVerification.checked,
+        });
       });
 
       window.addEventListener("message", (event) => {
@@ -566,6 +598,10 @@
           submit.innerText = `Ask ${event.data.model}`;
         } else if (event.data.type === "userRequest") {
           messageArea.value = event.data.userRequest;
+        } else if (event.data.type === "autonomous") {
+          autonomous.checked = event.data.autonomous;
+        } else if (event.data.type === "noVerification") {
+          noVerification.checked = event.data.noVerification;
         }
       });
 

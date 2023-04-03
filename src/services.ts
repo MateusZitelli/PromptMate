@@ -8,7 +8,7 @@ You may request more code snippets to help you understand the code.
 Provide code snippets whenever you can.`;
 */
 
-const systemPrompt = `You are a advanced programming AI that will develop software autonomously using commands.
+const autonomousSystemPrompt = `You are a advanced programming AI that will develop software autonomously using commands.
 The set of available commands are:
 @startCommand - Always start a set of commands with this.
 @listFiles <path> - List all files in a directory, the path is relative to the root directory, the output will be returned in an answer.
@@ -124,6 +124,12 @@ Always keep the memory updated with long-term goals, plans, desires, hypothesis,
 
 Always output commands, only output plain text when requested. 
 `;
+  
+const nonAutonomousSystemPrompt = `You are a helpful assistant that will be helping develop software.
+You are going to receive files, functions and selection to give you context.
+You can ask me questions about the code and I will try to answer them.
+You may request more code snippets to help you understand the code.
+Provide code snippets whenever you can.`;
 
 
 interface ResponseFail {
@@ -141,12 +147,13 @@ export async function askGPT(
 		role: "user" | "assistant" | "system";
 		content: string;
 	}[] = [],
-	model: string = "gpt-4"
+	model: string = "gpt-4",
+  autonomous: boolean = false
 ): Promise<ResponseFail | ResponseOk<string>> {
   const data = {
     model,
     messages: [
-      { role: "system", content: systemPrompt },
+      { role: "system", content: autonomous ? autonomousSystemPrompt : nonAutonomousSystemPrompt },
       ...messages,
     ],
     temperature: 0.2,

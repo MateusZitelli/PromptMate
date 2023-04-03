@@ -27,6 +27,8 @@ export function activate(context: vscode.ExtensionContext) {
   let loading = false;
   let lastConversationLength = 0;
   let memory = "";
+  let autonomous = context.globalState.get("autonomous", false);
+  let noVerification = context.globalState.get("noVerification", false);
 
   const loadUI = () => {
     if (panel) {
@@ -68,6 +70,12 @@ export function activate(context: vscode.ExtensionContext) {
         handleToggleMarkdownEvent();
       }else if (message.type === "deleteMessage") {
         conversationHistory.splice(message.index, 1);
+      }else if (message.type === "updateAutonomous") {
+        autonomous = message.autonomous;
+        context.globalState.update("autonomous", message.autonomous);
+      }else if (message.type === "updateNoVerification") {
+        noVerification = message.noVerification;
+        context.globalState.update("noVerification", message.noVerification);
       }
 
       await updateUI();
@@ -100,6 +108,8 @@ export function activate(context: vscode.ExtensionContext) {
     });
     await panel?.webview.postMessage({ type: "model", model });
     await panel?.webview.postMessage({ type: "models", models });
+    await panel?.webview.postMessage({ type: "autonomous", autonomous });
+    await panel?.webview.postMessage({ type: "noVerification", noVerification });
   };
   
   const handleToggleMarkdownEvent = async () => {
@@ -127,10 +137,12 @@ export function activate(context: vscode.ExtensionContext) {
         role: m.role,
         content: buildPrompt(m.codePrompt, m.text),
       })),
-      model
+      model,
+      autonomous,
     );
 
     if (!response.ok) {
+      loading = false;
       conversationHistory.splice(-1);
       if (response.code === "context_length_exceeded") {
         vscode.window.showErrorMessage(
@@ -149,6 +161,11 @@ export function activate(context: vscode.ExtensionContext) {
 
     clearCurrentPrompt();
 
+    if(!autonomous) {
+      loading = false;
+      return;
+    }
+
     const agentCommandsResult = await handleAgentCommands(response.data);
 
     loading = false;
@@ -157,7 +174,7 @@ export function activate(context: vscode.ExtensionContext) {
       return;
     }
 
-    if ((currentUserRequest.length > 0 || codePrompts.length > 0) && !error) {
+    if ((currentUserRequest.length > 0 || codePrompts.length > 0) && !error && noVerification) {
       await handleAskGPTEvent({
         token: message.token,
         userRequest: currentUserRequest,

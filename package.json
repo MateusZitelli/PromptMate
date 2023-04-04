@@ -2,7 +2,7 @@
   "name": "promptmate",
   "displayName": "PromptMate",
   "description": "An extension to help you develop using GPT",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "engines": {
     "vscode": "^1.76.0"
   },

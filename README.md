@@ -10,6 +10,8 @@ Install [PromptMate for VS Code](https://marketplace.visualstudio.com/items?item
 
 - Automatically create prompts including files, functions, and code selections. 📄
 - See the conversation directly on your editor. 💬
+- Autonomous mode:
+  - Let GPT-X read and write files, check syntax errors, run shell commands to acomplish your goals.
 - Build your prompt using shortcuts. ⌨️
 - Toggle between markdown and plain text rendering. 🔄
 - Supports multiple models including GPT-4. 🧠

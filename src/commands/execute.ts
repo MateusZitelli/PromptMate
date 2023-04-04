@@ -42,13 +42,19 @@ export const createExecuteCommands = (context: CommandsContext) => async (comman
         const readFilePath = args[0];
         const readFilePathUri = vscode.Uri.file(workspaceFolder + "/" + readFilePath);
         const content = readFileSync(readFilePathUri.fsPath, 'utf8');
+        const readFileStartLine = parseInt(args[1] ?? '0');
+        const readFileEndLine = parseInt(args[2] ?? '20');
+        
+        const selectedContent = content.split('\n').slice(readFileStartLine, readFileEndLine).join('\n');
         
         codePrompts = [
           ...codePrompts,
           {
             type: "file",
             location: readFilePath,
-            content: content,
+            content: selectedContent,
+            totalLines: content.split('\n').length,
+            startLine: readFileStartLine,
           }
         ];
         loadUI();

@@ -8,8 +8,6 @@ import { createExecuteCommands, Message } from "./commands/execute";
 import { handleAddPromptEvent, CodePrompt as CodePrompt } from "./prompt";
 
 
-// This project is a VS Code extension that implements your commands. Explore the project and implement a @find command to search text in the workspace at the file prompt-mate/src/extension.ts.
-
 export function activate(context: vscode.ExtensionContext) {
   let panel: vscode.WebviewPanel | undefined;
   let conversationHistory: Message[] = [];
@@ -354,11 +352,11 @@ const buildPrompt = (codePrompt: CodePrompt[] | undefined, userRequest: string) 
 const promptToText = (prompt: CodePrompt[]) => {
   return prompt
     .map((p) => {
-      const linedContent = addLineNumbers(p.content, "startLine" in p ? p.startLine : 0);
+      const linedContent = addLineNumbers(p.content, "startLine" in p ? p.startLine ?? 0 : 0);
       if (p.type === "function") {
         return `# function "${p.name}" @ "${p.location}:${p.startLine}"\n${linedContent}\n`;
       } else if (p.type === "file") {
-        return `# file @ "${p.location}"\n${linedContent}\n`;
+        return `# file @ "${p.location}" totalLines: ${p.totalLines}\n${linedContent}\n`;
       } else if (p.type === "selection") {
         return `# selection @ "${p.location}:${p.startLine}\n${linedContent}\n`;
       }

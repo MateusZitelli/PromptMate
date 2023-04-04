@@ -14,6 +14,8 @@ interface FilePrompt {
   type: "file";
   location: string;
   content: string;
+  totalLines: number;
+  startLine?: number;
 }
 
 interface SelectionPrompt {
@@ -55,6 +57,7 @@ export async function handleAddPromptEvent(
         type: "file",
         location: relativeDir,
         content: fileContent,
+        totalLines: document.lineCount,
       },
     ];
   } else if (promptEvent === "function") {

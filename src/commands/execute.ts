@@ -329,6 +329,17 @@ export const createExecuteCommands = (context: CommandsContext) => async (comman
         break;
       case "runInTerminal":
         const terminalCommand = args[0];
+        
+        // Open a confirmation modal in VS Code
+        const confirmation = await vscode.window.showInformationMessage(
+          `Allow PromptMate to run "${terminalCommand}" in the terminal?`,
+          "Allow",
+          "Cancel"
+        );
+        
+        if (confirmation !== "Allow") {
+          break;
+        }
 
         const output = await new Promise((resolve, reject) => {
           exec(

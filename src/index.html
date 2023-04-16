@@ -132,7 +132,7 @@
       box-shadow: 0 0 5px rgba(0, 0, 0, 0.5);
       width: 100px;
     }
-    #serper-token {
+    #serper-api-key {
       box-shadow: 0 0 5px rgba(0, 0, 0, 0.5);
       width: 100px;
     }
@@ -345,8 +345,8 @@
         <input id="token" type="password" placeholder="Enter your OpenAI API key here..." />
       </div>
       <div>
-        <label for="serper-token">Serper API key</label>
-        <input id="serper-token" type="password" placeholder="Enter your Serper API key here..." />
+        <label for="serper-api-key">Serper API key</label>
+        <input id="serper-api-key" type="password" placeholder="Enter your Serper API key here..." />
         <button id="save-token">Save tokens</button>
       </div>
       <div id="model-section">
@@ -400,7 +400,7 @@
       const vscode = acquireVsCodeApi();
 
       const token = document.getElementById("token");
-      const serperToken = document.getElementById("serper-token");
+      const serperApiKey = document.getElementById("serper-api-key");
       const promptDisplay = document.getElementById("prompt-display");
       const messageArea = document.getElementById("message-area");
       const submit = document.getElementById("submit");
@@ -417,7 +417,6 @@
         "missing-token-message"
       );
       const saveToken = document.getElementById("save-token");
-      const saveSerperToken = document.getElementById("save-serper-token");
       const clearConversation = document.getElementById("clear-conversation");
       const toggleMarkdownButton = document.getElementById("toggle-markdown");
       const loadingSpinner = document.getElementById("loading-spinner");
@@ -437,7 +436,7 @@
         vscode.postMessage({
           type: "updateToken",
           token: token.value,
-          serperToken: serperToken.value,
+          serperApiKey: serperApiKey.value,
         });
       });
 
@@ -554,6 +553,8 @@
 
             conversation.prepend(messageElement);
           });
+          
+          conversation.scrollTop = conversation.scrollHeight;
 
           clearConversation.style.display = "block";
         } else if (event.data.type === "loading") {
@@ -565,11 +566,12 @@
           } else {
             token.value = "";
           }
-        } else if (event.data.type === "serperToken") {
-          if(event.data.serperToken !== undefined) {
-            serperToken.value = event.data.serperToken;
+        } else if (event.data.type === "serperApiKey") {
+          console.log(event)
+          if(event.data.serperApiKey !== undefined) {
+            serperApiKey.value = event.data.serperApiKey;
           } else {
-            serperToken.value = "";
+            serperApiKey.value = "";
           }
         } else if (event.data.type === "currentFullPrompt") {
           fullPrompt.innerText = event.data.fullPrompt;

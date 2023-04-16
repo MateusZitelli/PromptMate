@@ -3,14 +3,14 @@ import { micromark } from "micromark";
 import "dotenv/config";
 import html from "./index.html";
 import { createAgentConversation, getModels } from "./services";
-import { createTools, Message } from "./tools";
+import { Message } from "./tools";
 import { handleAddPromptEvent, CodePrompt as CodePrompt } from "./prompt";
 import './fetch-polyfill';
 
 export async function activate(context: vscode.ExtensionContext) {
   const generateConversationAgent = () => {
     if (openAIKey) {
-      return createAgentConversation(model, openAIKey, autonomous, serperAPIKey);
+      return createAgentConversation(model, openAIKey, autonomous, serperApiKey);
     }
   };
 
@@ -25,7 +25,7 @@ export async function activate(context: vscode.ExtensionContext) {
     "openaiUserToken",
     undefined
   );
-  let serperAPIKey: string | undefined = context.globalState.get(
+  let serperApiKey: string | undefined = context.globalState.get(
     "serperAPIKey",
     undefined
   );
@@ -50,10 +50,11 @@ export async function activate(context: vscode.ExtensionContext) {
       if (message.type === "askGPT" && !loading && openAIKey) {
         await handleAskGPTEvent(message);
       } else if (message.type === "updateToken") {
+        console.log(message);
         context.globalState.update("openaiUserToken", message.token);
-        context.globalState.update("serperAPIKey", message.serperToken);
+        context.globalState.update("serperAPIKey", message.serperApiKey);
         openAIKey = message.token;
-        serperAPIKey = message.serperToken;
+        serperApiKey = message.serperApiKey;
         conversationAgent = await generateConversationAgent();
         await loadModels();
       } else if (message.type === "updateModel") {
@@ -109,6 +110,7 @@ export async function activate(context: vscode.ExtensionContext) {
       prompt: codePrompts ? [...codePrompts] : undefined,
     });
     await panel?.webview.postMessage({ type: "token", token: openAIKey });
+    await panel?.webview.postMessage({ type: "serperApiKey", serperApiKey });
     await panel?.webview.postMessage({
       type: "currentFullPrompt",
       fullPrompt: buildPrompt(codePrompts, currentUserRequest),

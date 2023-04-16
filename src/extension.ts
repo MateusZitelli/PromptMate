@@ -1,14 +1,19 @@
 import * as vscode from "vscode";
 import { micromark } from "micromark";
-import {parseLine, Command, parseCommands} from "./commands/parse";
 import "dotenv/config";
 import html from "./index.html";
-import { askGPT, getModels } from "./services";
-import { createExecuteCommands, Message } from "./commands/execute";
+import { createAgentConversation, getModels } from "./services";
+import { createTools, Message } from "./tools/execute";
 import { handleAddPromptEvent, CodePrompt as CodePrompt } from "./prompt";
+import './fetch-polyfill';
 
+export async function activate(context: vscode.ExtensionContext) {
+  const generateConversationAgent = () => {
+    if (openAIKey) {
+      return createAgentConversation(model, openAIKey);
+    }
+  };
 
-export function activate(context: vscode.ExtensionContext) {
   let panel: vscode.WebviewPanel | undefined;
   let conversationHistory: Message[] = [];
   let codePrompts: CodePrompt[] = [];
@@ -16,9 +21,9 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.window.activeTextEditor;
   let currentUserRequest = "";
   let models: string[] = [];
-  let token: string | undefined = context.globalState.get(
+  let openAIKey: string | undefined = context.globalState.get(
     "openaiUserToken",
-    ""
+    undefined
   );
   let renderMarkdown = true;
   let model = context.globalState.get("openaiModel", "gpt-3.5-turbo");
@@ -27,6 +32,7 @@ export function activate(context: vscode.ExtensionContext) {
   let memory = "";
   let autonomous = context.globalState.get("autonomous", false);
   let noVerification = context.globalState.get("noVerification", false);
+  let conversationAgent = await generateConversationAgent();
 
   const loadUI = () => {
     if (panel) {
@@ -39,15 +45,17 @@ export function activate(context: vscode.ExtensionContext) {
     });
 
     panel?.webview.onDidReceiveMessage(async (message) => {
-      if (message.type === "askGPT" && !loading && token) {
+      if (message.type === "askGPT" && !loading && openAIKey) {
         await handleAskGPTEvent(message);
       } else if (message.type === "updateToken") {
         context.globalState.update("openaiUserToken", message.token);
-        token = message.token;
+        openAIKey = message.token;
+        conversationAgent = await generateConversationAgent();
         await loadModels();
       } else if (message.type === "updateModel") {
         context.globalState.update("openaiModel", message.model);
         model = message.model;
+        conversationAgent = await generateConversationAgent();
       } else if (message.type === "addPrompt") {
         codePrompts = await handleAddPromptEvent(
           lastActiveEditor,
@@ -59,7 +67,7 @@ export function activate(context: vscode.ExtensionContext) {
       } else if (message.type === "updateQuestion") {
         currentUserRequest = message.userRequest;
       } else if (message.type === "init") {
-        if (token) {
+        if (openAIKey) {
           await loadModels();
         }
       } else if (message.type === "clearConversation") {
@@ -99,7 +107,7 @@ export function activate(context: vscode.ExtensionContext) {
       type: "prompt",
       prompt: codePrompts ? [...codePrompts] : undefined,
     });
-    await panel?.webview.postMessage({ type: "token", token });
+    await panel?.webview.postMessage({ type: "token", token: openAIKey });
     await panel?.webview.postMessage({
       type: "currentFullPrompt",
       fullPrompt: buildPrompt(codePrompts, currentUserRequest),
@@ -128,33 +136,20 @@ export function activate(context: vscode.ExtensionContext) {
     });
 
     await updateUI();
-
-    const response = await askGPT(
-      message.token,
-      conversationHistory.map((m) => ({
-        role: m.role,
-        content: buildPrompt(m.codePrompt, m.text),
-      })),
-      model,
-      autonomous,
-    );
-
-    if (!response.ok) {
+    
+        
+    const response = await conversationAgent?.ask(buildPrompt([...codePrompts], message.userRequest));
+    
+    if(!response) {
       loading = false;
       conversationHistory.splice(-1);
-      if (response.code === "context_length_exceeded") {
-        vscode.window.showErrorMessage(
-          "Conversation length exceeded, remove some messages."
-        );
-      } else {
-        vscode.window.showErrorMessage("Failed to fetch response, try again.");
-      }
+      vscode.window.showErrorMessage("Failed to fetch response, try again.");
       return;
     }
 
     conversationHistory.push({
       role: "assistant",
-      text: response.data,
+      text: response.output,
     });
 
     clearCurrentPrompt();
@@ -164,13 +159,7 @@ export function activate(context: vscode.ExtensionContext) {
       return;
     }
 
-    const agentCommandsResult = await handleAgentCommands(response.data);
-
     loading = false;
-
-    if (!agentCommandsResult.ok) {
-      return;
-    }
 
     if ((currentUserRequest.length > 0 || codePrompts.length > 0) && !error && noVerification) {
       await handleAskGPTEvent({
@@ -180,48 +169,6 @@ export function activate(context: vscode.ExtensionContext) {
       });
     }
   };
-  
-  const handleAgentCommands = async (data: string) => {
-    const executeCommands = createExecuteCommands({
-      state: {
-        codePrompts,
-        currentUserRequest,
-        editor: vscode.window.activeTextEditor ?? lastActiveEditor,
-        panel,
-        memory,
-        conversationHistory,
-      },
-      actions: {
-        loadUI,
-      },
-    });
-
-    try {
-      // Execute the commands from the AI response.
-      const commands = parseCommands(data);
-      const newContext = await executeCommands(commands);
-      codePrompts = newContext.codePrompts;
-      currentUserRequest = newContext.currentUserRequest;
-      lastActiveEditor = newContext.editor;
-      return {ok: true};
-    } catch (e) {
-      if (e instanceof Error) {
-        currentUserRequest += e.message;
-        await panel?.webview.postMessage({
-          type: "userRequest",
-          userRequest: currentUserRequest,
-        });
-        vscode.window.showErrorMessage("Command error");
-        console.error(e);
-      } else {
-        throw e;
-      }
-      return {
-        ok: false
-      };
-    }
-  };
-  
 
   const clearCurrentPrompt = () => {
     codePrompts = [];
@@ -233,13 +180,13 @@ export function activate(context: vscode.ExtensionContext) {
   };
 
   const loadModels = async () => {
-    if (!token) {
+    if (!openAIKey) {
       vscode.window.showErrorMessage(
         "Failed to fetch models, please check your token"
       );
       return;
     }
-    const response = await getModels(token);
+    const response = await getModels(openAIKey);
     if (!response.ok) {
       vscode.window.showErrorMessage(
         "Failed to fetch models, please check your token"
@@ -297,41 +244,6 @@ export function activate(context: vscode.ExtensionContext) {
     })
   );
 
-  context.subscriptions.push(
-    vscode.commands.registerCommand("promptmate.runCommand", async () => {
-      const command = await vscode.window.showInputBox({
-        prompt: "Enter a command",
-      });
-
-      if(!command){
-        return;
-      }
-      const parsedLine = parseLine(command);
-      
-      if(!parsedLine){
-        return;
-      }
-
-      const [name, args] = parsedLine;
-      
-      const executeCommands = createExecuteCommands({
-        state: {
-          codePrompts,
-          currentUserRequest,
-          editor: vscode.window.activeTextEditor ?? lastActiveEditor,
-          panel,
-          memory,
-          conversationHistory,
-        },
-        actions: {
-          loadUI,
-        },
-      });
-
-      await executeCommands([new Command(name, args)]);
-    })
-  );
-        
   vscode.window.onDidChangeActiveTextEditor(
     (editor) => {
       if (editor) {

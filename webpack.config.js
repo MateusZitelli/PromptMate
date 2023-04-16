@@ -2,7 +2,12 @@
 
 'use strict';
 
-const path = require('path');
+import path from 'path';
+import { fileURLToPath } from 'url';
+// eslint-disable-next-line @typescript-eslint/naming-convention
+const __filename = fileURLToPath(import.meta.url);
+// eslint-disable-next-line @typescript-eslint/naming-convention
+const __dirname = path.dirname(__filename);
 
 //@ts-check
 /** @typedef {import('webpack').Configuration} WebpackConfig **/
@@ -16,7 +21,7 @@ const extensionConfig = {
   output: {
     // the bundle is stored in the 'dist' folder (check package.json), 📖 -> https://webpack.js.org/configuration/output/
     path: path.resolve(__dirname, 'dist'),
-    filename: 'extension.js',
+    filename: 'extension.cjs',
     libraryTarget: 'commonjs2'
   },
   externals: {
@@ -49,4 +54,4 @@ const extensionConfig = {
     level: "log", // enables logging required for problem matchers
   },
 };
-module.exports = [ extensionConfig ];
+export default [ extensionConfig ];

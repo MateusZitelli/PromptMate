@@ -57,7 +57,7 @@ export const createAgentConversation = async (modelName: string, apiKey: string,
   });
   const tools = createTools(apiKey, serperAPIKey, autonomous);
 
-  const bufferMemory = new ConversationSummaryMemory({
+  const memory = new ConversationSummaryMemory({
     returnMessages: true,
     memoryKey: "chat_history",
     inputKey: "input",
@@ -68,19 +68,19 @@ export const createAgentConversation = async (modelName: string, apiKey: string,
       systemMessage: `Assistant is an software development AI. The user will provide you tools to develop software. The user can only use one tool at the time, so never ask for more than one action per message.\n\nAssistant is designed to be able to develop software and answer questions exploring code bases. As a language model, Assistant is able to generate human-like text based on the input it receives, allowing it to engage in natural-sounding conversations and provide responses that are coherent and relevant to the engineer pairing with the assistant.\n\nAssistant is constantly learning and improving, and its capabilities are constantly evolving. It is able to process and understand large amounts of text, and can use this knowledge to develop software and execute any actions in the user machine. Additionally, Assistant is able to generate its own text based on the input it receives, allowing it to develop software and answer questions about the current project.\n\nOverall, Assistant is a powerful software development system. Whether you need help developing software or help understanding code bases and concepts, Assistant is here to assist. Never be lazy, only stop working when you found an answer or you are sure you can't find it. NEVER assume, ALWAYS check.` 
     }),
     tools,
-    memory: bufferMemory,
+    memory: memory,
     returnIntermediateSteps: true,
     verbose: true,
   });
   
   return {
-    getConversation() {
-      return bufferMemory.chatHistory;
+    getMemory() {
+      return memory;
     },
     async ask(message: string) {
       const response = await executor.call({ input: message });
       console.log(response);
-      console.log(await bufferMemory.loadMemoryVariables({}));
+      console.log(await memory.loadMemoryVariables({}));
       return response;
     }
   };

@@ -3,6 +3,12 @@ import { CodePrompt } from "../prompt";
 import { exec } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { DynamicTool } from "langchain/tools";
+import { ChatOpenAI } from "langchain/chat_models/openai";
+import { RecursiveCharacterTextSplitter } from "langchain/text_splitter";
+import { loadSummarizationChain } from "langchain/chains";
+import { WebBrowser } from "langchain/tools/webbrowser";
+import { OpenAIEmbeddings } from "langchain/embeddings/openai";
+import { Serper } from "langchain/tools";
 
 export interface Message {
   role: "user" | "assistant" | "system";
@@ -10,14 +16,46 @@ export interface Message {
   text: string;
 }
 
-export function createTools() {
+export function createTools(openAIApiKey: string, serperAPIKey: string | undefined, autonomous: boolean) {
   const workspaceFolder = vscode.workspace.workspaceFolders?.[0].uri.fsPath;
   let editor = vscode.window.activeTextEditor;
+  const model = new ChatOpenAI({ temperature: 0, openAIApiKey });
+  const embeddings = new OpenAIEmbeddings({ openAIApiKey });
+  const browser = new WebBrowser({ model, embeddings });
+  const extraTools = serperAPIKey ? [new Serper(serperAPIKey)] : [];
+  
+  const readFileSummary = new DynamicTool({
+    name: "readFileSummary",
+    description:
+      "Provide a summary about the content of a file in the file system. Preferably use this instead of readFile. Expects the relative path as input and outputs the file content.",
+    func: async (relativePath: string) => {
+      try {
+        const readFilePath = relativePath;
+        const readFilePathUri = vscode.Uri.file(
+          workspaceFolder + "/" + readFilePath
+        );
+        const content = readFileSync(readFilePathUri.fsPath, "utf8");
+        const textSplitter = new RecursiveCharacterTextSplitter({
+          chunkSize: 1000,
+        });
+        const docs = await textSplitter.createDocuments([content]);
+
+        // This convenience function creates a document chain prompted to summarize a set of documents.
+        const chain = loadSummarizationChain(model);
+        const res = await chain.call({
+          input_documents: docs,
+        });
+        return res.text;
+      } catch (e) {
+        return e;
+      }
+    },
+  });
 
   const readFile = new DynamicTool({
     name: "readFile",
     description:
-      "Reads a file in the file system. Expects the relative path as input and outputs the file content.",
+      "Reads a file in the file system. Use this when the summary was not enough. Expects the relative path as input and outputs the file content.",
     func: async (relativePath: string) => {
       try {
         const readFilePath = relativePath;
@@ -96,9 +134,7 @@ export function createTools() {
     description: `Inserts text at a specified location in a file. Expects a JSON with this type path: string; insertLine: number; insertColumn: number; parsedText: string;.`,
     func: async (arg) => {
       try {
-        const { path, insertLine, insertColumn, parsedText } = JSON.parse(
-          arg
-        ) as {
+        const { path, insertLine, insertColumn, parsedText } = arg as unknown as { 
           path: string;
           insertLine: number;
           insertColumn: number;
@@ -164,9 +200,7 @@ export function createTools() {
       "Selects text in the active editor. Expects a JSON with this type  startLine: number; startColumn: number; endLine: number; endColumn: number; .",
     func: async (arg) => {
       try {        
-        const { startLine, startColumn, endLine, endColumn } = JSON.parse(
-          arg
-        ) as {
+        const { startLine, startColumn, endLine, endColumn } = arg as unknown as {
           startLine: number;
           startColumn: number;
           endLine: number;
@@ -197,7 +231,7 @@ export function createTools() {
     func: async (arg) => {
       try {
         const { path, startLine, startColumn, endLine, endColumn, newText } =
-          JSON.parse(arg) as {
+          arg as unknown as {
             path: string;
             startLine: number;
             startColumn: number;
@@ -205,9 +239,6 @@ export function createTools() {
             endColumn: number;
             newText: string;
           };
-        if (!editor) {
-          throw new Error("No active editor");
-        }
         const workspaceFolder =
           vscode.workspace.workspaceFolders?.[0].uri.fsPath;
         const replaceFileUri = vscode.Uri.file(workspaceFolder + "/" + path);
@@ -235,9 +266,7 @@ export function createTools() {
     description: `Copies text in a specified range in a file. Expects a JSON with this type  path: string; startLine: number; startColumn: number; endLine: number; endColumn: number; .`,
     func: async (arg) => {
       try {
-        const { path, startLine, startColumn, endLine, endColumn } = JSON.parse(
-          arg
-        ) as {
+        const { path, startLine, startColumn, endLine, endColumn } = arg as unknown as {
           path: string;
           startLine: number;
           startColumn: number;
@@ -270,9 +299,7 @@ export function createTools() {
     description: `Cuts text in a specified range in a file. Expects a JSON with this type path: string; startLine: number; startColumn: number; endLine: number; endColumn: number;.`,
     func: async (arg) => {
       try {
-        const { path, startLine, startColumn, endLine, endColumn } = JSON.parse(
-          arg
-        ) as {
+        const { path, startLine, startColumn, endLine, endColumn } = arg as unknown as {
           path: string;
           startLine: number;
           startColumn: number;
@@ -309,7 +336,7 @@ export function createTools() {
     description: `Pastes text from the clipboard at a specified location in a file. Expects a JSON with this type  path: string; line: number; column: number; .`,
     func: async (arg) => {
       try {
-        const { path, line, column } = JSON.parse(arg) as {
+        const { path, line, column } = arg as unknown as {
           path: string;
           line: number;
           column: number;
@@ -385,19 +412,61 @@ export function createTools() {
       }
     },
   });
+  
+  const getSyntaxErrors = new DynamicTool({
+    name: "getSyntaxErrors",
+    description: `Gets syntax errors in a file. ALWAYS run this after code changes. Expects the relative path as input.`,
+    func: async (path) => {
+      try {
+        const workspaceFolder =
+          vscode.workspace.workspaceFolders?.[0].uri.fsPath;
+        const fileUri = vscode.Uri.file(workspaceFolder + "/" + path);
+        const diagnostics = vscode.languages.getDiagnostics(fileUri);
+        const errors = diagnostics.filter((diagnostic) => diagnostic.severity === vscode.DiagnosticSeverity.Error);
+        const errorMessages = errors.map((error) => {
+          const range = error.range;
+          const line = range.start.line;
+          const column = range.start.character;
+          const message = error.message;
+          return {
+            line,
+            column,
+            message
+          };
+        });
+        return JSON.stringify(errorMessages);
+      } catch (e) {
+        return e instanceof Error ? e.message : "Error getting syntax errors";
+      }
+    },
+  });
 
-  return [
-    readFile,
-    listFiles,
+  const autonomousTools = [
     createFile,
     undo,
     redo,
     input,
-    select,
     replace,
     copy,
     cut,
     paste,
-    runInTerminal
+    runInTerminal,
+    getSyntaxErrors,
   ];
+
+  const readOnlyTools = [
+    readFileSummary,
+    readFile,
+    listFiles,
+    select,
+    getSyntaxErrors,
+    browser,
+    ...extraTools,
+  ];
+  
+  if(!autonomous) {
+    return readOnlyTools;
+  }
+  
+  return [...autonomousTools, ...readOnlyTools];
 }

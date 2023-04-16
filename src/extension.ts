@@ -3,14 +3,14 @@ import { micromark } from "micromark";
 import "dotenv/config";
 import html from "./index.html";
 import { createAgentConversation, getModels } from "./services";
-import { createTools, Message } from "./tools/execute";
+import { createTools, Message } from "./tools";
 import { handleAddPromptEvent, CodePrompt as CodePrompt } from "./prompt";
 import './fetch-polyfill';
 
 export async function activate(context: vscode.ExtensionContext) {
   const generateConversationAgent = () => {
     if (openAIKey) {
-      return createAgentConversation(model, openAIKey);
+      return createAgentConversation(model, openAIKey, autonomous, serperAPIKey);
     }
   };
 
@@ -25,13 +25,15 @@ export async function activate(context: vscode.ExtensionContext) {
     "openaiUserToken",
     undefined
   );
+  let serperAPIKey: string | undefined = context.globalState.get(
+    "serperAPIKey",
+    undefined
+  );
   let renderMarkdown = true;
   let model = context.globalState.get("openaiModel", "gpt-3.5-turbo");
   let loading = false;
   let lastConversationLength = 0;
-  let memory = "";
   let autonomous = context.globalState.get("autonomous", false);
-  let noVerification = context.globalState.get("noVerification", false);
   let conversationAgent = await generateConversationAgent();
 
   const loadUI = () => {
@@ -49,7 +51,9 @@ export async function activate(context: vscode.ExtensionContext) {
         await handleAskGPTEvent(message);
       } else if (message.type === "updateToken") {
         context.globalState.update("openaiUserToken", message.token);
+        context.globalState.update("serperAPIKey", message.serperToken);
         openAIKey = message.token;
+        serperAPIKey = message.serperToken;
         conversationAgent = await generateConversationAgent();
         await loadModels();
       } else if (message.type === "updateModel") {
@@ -79,9 +83,6 @@ export async function activate(context: vscode.ExtensionContext) {
       }else if (message.type === "updateAutonomous") {
         autonomous = message.autonomous;
         context.globalState.update("autonomous", message.autonomous);
-      }else if (message.type === "updateNoVerification") {
-        noVerification = message.noVerification;
-        context.globalState.update("noVerification", message.noVerification);
       }
 
       await updateUI();
@@ -115,7 +116,6 @@ export async function activate(context: vscode.ExtensionContext) {
     await panel?.webview.postMessage({ type: "model", model });
     await panel?.webview.postMessage({ type: "models", models });
     await panel?.webview.postMessage({ type: "autonomous", autonomous });
-    await panel?.webview.postMessage({ type: "noVerification", noVerification });
   };
   
   const handleToggleMarkdownEvent = async () => {
@@ -154,20 +154,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
     clearCurrentPrompt();
 
-    if(!autonomous) {
-      loading = false;
-      return;
-    }
-
     loading = false;
-
-    if ((currentUserRequest.length > 0 || codePrompts.length > 0) && !error && noVerification) {
-      await handleAskGPTEvent({
-        token: message.token,
-        userRequest: currentUserRequest,
-        codePrompt: [...codePrompts],
-      });
-    }
   };
 
   const clearCurrentPrompt = () => {

@@ -132,6 +132,10 @@
       box-shadow: 0 0 5px rgba(0, 0, 0, 0.5);
       width: 100px;
     }
+    #serper-token {
+      box-shadow: 0 0 5px rgba(0, 0, 0, 0.5);
+      width: 100px;
+    }
 
     #model {
       box-shadow: 0 0 5px rgba(0, 0, 0, 0.5);
@@ -337,9 +341,13 @@
     <section class="section-header">
       <h1>PromptMate</h1>
       <div>
-        <label for="token">OpenAI user token</label>
-        <input id="token" type="password" placeholder="Enter your OpenAI token here..." />
-        <button id="save-token">Save token</button>
+        <label for="token">OpenAI API Key</label>
+        <input id="token" type="password" placeholder="Enter your OpenAI API key here..." />
+      </div>
+      <div>
+        <label for="serper-token">Serper API key</label>
+        <input id="serper-token" type="password" placeholder="Enter your Serper API key here..." />
+        <button id="save-token">Save tokens</button>
       </div>
       <div id="model-section">
         <label for="model">Model</label>
@@ -370,12 +378,8 @@
               </div>
               <div class="configurations">
                 <div class="configuration">
-                  <label for="autonomous">Autonomous mode</label>
+                  <label for="autonomous">Allow writing</label>
                   <input type="checkbox" id="autonomous" name="autonomous">
-                </div>
-                <div class="configuration">
-                  <label for="no-verification">Disable verification</label>
-                  <input type="checkbox" id="no-verification" name="no-verification">
                 </div>
               </div>
             </div>
@@ -396,6 +400,7 @@
       const vscode = acquireVsCodeApi();
 
       const token = document.getElementById("token");
+      const serperToken = document.getElementById("serper-token");
       const promptDisplay = document.getElementById("prompt-display");
       const messageArea = document.getElementById("message-area");
       const submit = document.getElementById("submit");
@@ -412,11 +417,11 @@
         "missing-token-message"
       );
       const saveToken = document.getElementById("save-token");
+      const saveSerperToken = document.getElementById("save-serper-token");
       const clearConversation = document.getElementById("clear-conversation");
       const toggleMarkdownButton = document.getElementById("toggle-markdown");
       const loadingSpinner = document.getElementById("loading-spinner");
       const autonomous = document.getElementById("autonomous");
-      const noVerification = document.getElementById("no-verification");
 
       let modelValue;
       let modelsLoaded = false;
@@ -432,6 +437,7 @@
         vscode.postMessage({
           type: "updateToken",
           token: token.value,
+          serperToken: serperToken.value,
         });
       });
 
@@ -498,13 +504,6 @@
         });
       });
 
-      noVerification.addEventListener("change", () => {
-        vscode.postMessage({
-          type: "updateNoVerification",
-          noVerification: noVerification.checked,
-        });
-      });
-
       window.addEventListener("message", (event) => {
         if (event.data.type === "prompt") {
           promptDisplay.innerHTML = "";
@@ -566,6 +565,12 @@
           } else {
             token.value = "";
           }
+        } else if (event.data.type === "serperToken") {
+          if(event.data.serperToken !== undefined) {
+            serperToken.value = event.data.serperToken;
+          } else {
+            serperToken.value = "";
+          }
         } else if (event.data.type === "currentFullPrompt") {
           fullPrompt.innerText = event.data.fullPrompt;
         } else if (event.data.type === "models") {
@@ -600,8 +605,6 @@
           messageArea.value = event.data.userRequest;
         } else if (event.data.type === "autonomous") {
           autonomous.checked = event.data.autonomous;
-        } else if (event.data.type === "noVerification") {
-          noVerification.checked = event.data.noVerification;
         }
       });
 

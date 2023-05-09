@@ -1,8 +1,9 @@
-import { BasePromptTemplate, LLMChain } from "langchain";
 import { BaseLanguageModel } from "langchain/base_language";
 import { BaseChatMessage, SystemChatMessage, InputValues, ChatMessage } from "langchain/schema";
 import { BaseChatMemory, ChatMessageHistory } from "langchain/memory";
 import { SUMMARY_PROMPT } from "./prompt";
+import { BasePromptTemplate } from "langchain/prompts";
+import { LLMChain } from "langchain/chains";
 
 export interface BaseMemoryInput {
   chatHistory?: ChatMessageHistory;
@@ -106,10 +107,8 @@ export class ConversationSummaryMemory extends BaseChatMemory {
     this.chatHistory.addAIChatMessage(
       getInputValue(outputValues, this.outputKey)
     );
-    this.buffer = await this.predictNewSummary(
-      this.chatHistory.messages.slice(-2),
-      this.buffer
-    );
+    const messages = await this.chatHistory.getMessages();
+    this.buffer = await this.predictNewSummary(messages.slice(-2), this.buffer);
   }
 
   async clear() {

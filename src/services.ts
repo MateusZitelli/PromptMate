@@ -1,10 +1,11 @@
 import { ChatOpenAI } from "langchain/chat_models/openai";
-import { ChatConversationalAgent, AgentExecutor } from "langchain/agents";
 import axios from "axios";
 import { createTools } from "./tools";
 import { CallbackManager } from "langchain/callbacks";
 import { ConversationSummaryMemory } from "./memory";
 import * as vscode from "vscode";
+import { AgentExecutor } from "langchain/agents";
+import { ChatConversationalAgent } from "./agent";
 
 
 interface ResponseFail {
@@ -44,6 +45,46 @@ export async function getModels(token: string): Promise<ResponseFail | ResponseO
   }
 }
 
+export declare const FORMAT_INSTRUCTIONS = `RESPONSE FORMAT INSTRUCTIONS
+----------------------------
+
+When responding to me please, please output a response in one of two formats:
+
+**Option 1:**
+Use this if you want the human to use a tool.
+Markdown code snippet formatted in the following schema:
+
+\`\`\`json
+{{{{
+  \"action\": string \\ The action to take. Must be one of {tool_names}
+  \"action_input\": string \\ The input to the action
+}}}}
+\`\`
+
+**Option #2:**
+Use this if you want to respond directly to the human. Markdown code snippet formatted in the following schema:
+
+\`\`\`json
+{{{{
+  \"action\": \"Final Answer\",
+  \"action_input\": string \\ You should put what you want to return to use here
+}}}}
+\`\`\``;
+
+export declare const SUFFIX = `TOOLS
+------
+Assistant can ask the user to use tools to look up information that may be helpful in answering the users original question. The tools the human can use are:
+
+{{tools}}
+
+{format_instructions}
+
+USER'S INPUT
+--------------------
+Here is the user's input (remember to respond with a markdown code snippet of a json blob with a single action, and NOTHING else):
+
+{{{{input}}}}`;
+
 const systemMessage = `Assistant is an software development AI. The user will provide you tools to develop software. 
 The user can only use one tool at the time, so never ask for more than one action per message.
 
@@ -63,11 +104,7 @@ export const createAgentConversation = async (modelName: string, apiKey: string,
     temperature: 0,
     modelName,
     openAIApiKey: apiKey,
-    callbackManager: CallbackManager.fromHandlers({
-      handleToolStart: async (toolName) => {
-        vscode.window.showInformationMessage(`Using tool "${toolName}"`);
-      }
-    }),
+    verbose: true,
   });
   const tools = createTools(apiKey, serperAPIKey, autonomous);
 
@@ -78,7 +115,7 @@ export const createAgentConversation = async (modelName: string, apiKey: string,
     llm: model,
   });
   const executor = AgentExecutor.fromAgentAndTools({
-    agent: ChatConversationalAgent.fromLLMAndTools(model, tools, { systemMessage }),
+    agent: ChatConversationalAgent.fromLLMAndTools(model, tools),
     tools,
     memory: memory,
     returnIntermediateSteps: true,
@@ -91,8 +128,6 @@ export const createAgentConversation = async (modelName: string, apiKey: string,
     },
     async ask(message: string) {
       const response = await executor.call({ input: message });
-      console.log(response);
-      console.log(await memory.loadMemoryVariables({}));
       return response;
     }
   };

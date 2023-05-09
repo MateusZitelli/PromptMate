@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 import { DynamicTool } from "langchain/tools";
 import { ChatOpenAI } from "langchain/chat_models/openai";
 import { RecursiveCharacterTextSplitter } from "langchain/text_splitter";
-import { loadSummarizationChain } from "langchain/chains";
+import { loadSummarizationChain, loadQAMapReduceChain } from "langchain/chains";
 import { WebBrowser } from "langchain/tools/webbrowser";
 import { OpenAIEmbeddings } from "langchain/embeddings/openai";
 import { Serper } from "langchain/tools";
@@ -16,14 +16,23 @@ export interface Message {
   text: string;
 }
 
-export function createTools(openAIApiKey: string, serperAPIKey: string | undefined, autonomous: boolean) {
+export function createTools(
+  openAIApiKey: string,
+  serperAPIKey: string | undefined,
+  autonomous: boolean
+) {
   const workspaceFolder = vscode.workspace.workspaceFolders?.[0].uri.fsPath;
   let editor = vscode.window.activeTextEditor;
   const model = new ChatOpenAI({ temperature: 0, openAIApiKey });
   const embeddings = new OpenAIEmbeddings({ openAIApiKey });
   const browser = new WebBrowser({ model, embeddings });
   const extraTools = serperAPIKey ? [new Serper(serperAPIKey)] : [];
-  
+  const textSplitter = new RecursiveCharacterTextSplitter({
+    chunkSize: 1000,
+  });
+  const summarizationChain = loadSummarizationChain(model);
+  const qaChain = loadQAMapReduceChain(model);
+
   const readFileSummary = new DynamicTool({
     name: "readFileSummary",
     description:
@@ -35,14 +44,10 @@ export function createTools(openAIApiKey: string, serperAPIKey: string | undefin
           workspaceFolder + "/" + readFilePath
         );
         const content = readFileSync(readFilePathUri.fsPath, "utf8");
-        const textSplitter = new RecursiveCharacterTextSplitter({
-          chunkSize: 1000,
-        });
         const docs = await textSplitter.createDocuments([content]);
 
         // This convenience function creates a document chain prompted to summarize a set of documents.
-        const chain = loadSummarizationChain(model);
-        const res = await chain.call({
+        const res = await summarizationChain.call({
           input_documents: docs,
         });
         return res.text;
@@ -65,6 +70,35 @@ export function createTools(openAIApiKey: string, serperAPIKey: string | undefin
         return readFileSync(readFilePathUri.fsPath, "utf8");
       } catch (e) {
         console.log(e);
+        return e instanceof Error ? e.message : "Error reading file";
+      }
+    },
+  });
+
+  const questionFile = new DynamicTool({
+    name: "readFile",
+    description:
+      "Ask something about a file in the file system and this will provide you the snippets and answers. Use this to request information from specific files. Expects a JSON with this type path: string, question: string.",
+    func: async (relativePath: string) => {
+      try {
+        const { path, question } = relativePath as unknown as {
+          path: string;
+          question: string;
+        };
+        const readFilePath = path;
+        const readFilePathUri = vscode.Uri.file(
+          workspaceFolder + "/" + readFilePath
+        );
+        const content = readFileSync(readFilePathUri.fsPath, "utf8");
+
+        const docs = await textSplitter.createDocuments([content]);
+
+        const res = await qaChain.call({
+          input_documents: docs,
+          question: question,
+        });
+        return res.text;
+      } catch (e) {
         return e instanceof Error ? e.message : "Error reading file";
       }
     },
@@ -134,12 +168,13 @@ export function createTools(openAIApiKey: string, serperAPIKey: string | undefin
     description: `Inserts text at a specified location in a file. Expects a JSON with this type path: string; insertLine: number; insertColumn: number; parsedText: string;.`,
     func: async (arg) => {
       try {
-        const { path, insertLine, insertColumn, parsedText } = arg as unknown as { 
-          path: string;
-          insertLine: number;
-          insertColumn: number;
-          parsedText: string;
-        };
+        const { path, insertLine, insertColumn, parsedText } =
+          arg as unknown as {
+            path: string;
+            insertLine: number;
+            insertColumn: number;
+            parsedText: string;
+          };
         if (!editor) {
           throw new Error("No active editor");
         }
@@ -153,9 +188,7 @@ export function createTools(openAIApiKey: string, serperAPIKey: string | undefin
           await vscode.workspace.fs.writeFile(inputFileUri, new Uint8Array());
           inputDocument = await vscode.workspace.openTextDocument(inputFileUri);
         }
-        editor = await vscode.window.showTextDocument(
-          inputDocument
-        );
+        editor = await vscode.window.showTextDocument(inputDocument);
 
         editor.selection = new vscode.Selection(
           insertLine,
@@ -170,15 +203,10 @@ export function createTools(openAIApiKey: string, serperAPIKey: string | undefin
           editBuilder.insert(editor.selection.active, parsedText);
         });
         // get 20 lines before and after the cursor
-        const startLineInput = Math.max(
-          0,
-          editor.selection.active.line - 20
-        );
+        const startLineInput = Math.max(0, editor.selection.active.line - 20);
         const endLineInput = Math.min(
           editor.document.lineCount - 1,
-          editor.selection.active.line +
-            parsedText.split("\n").length +
-            20
+          editor.selection.active.line + parsedText.split("\n").length + 20
         );
         const range = new vscode.Range(
           startLineInput,
@@ -197,15 +225,16 @@ export function createTools(openAIApiKey: string, serperAPIKey: string | undefin
   const select = new DynamicTool({
     name: "select",
     description:
-      "Selects text in the active editor. Expects a JSON with this type  startLine: number; startColumn: number; endLine: number; endColumn: number; .",
+      "Selects text in the active editor. Use it to confirm ranges. Expects a JSON with this type startLine: number; startColumn: number; endLine: number; endColumn: number; .",
     func: async (arg) => {
-      try {        
-        const { startLine, startColumn, endLine, endColumn } = arg as unknown as {
-          startLine: number;
-          startColumn: number;
-          endLine: number;
-          endColumn: number;
-        };
+      try {
+        const { startLine, startColumn, endLine, endColumn } =
+          arg as unknown as {
+            startLine: number;
+            startColumn: number;
+            endLine: number;
+            endColumn: number;
+          };
         if (!editor) {
           throw new Error("No active editor");
         }
@@ -215,9 +244,7 @@ export function createTools(openAIApiKey: string, serperAPIKey: string | undefin
           endLine,
           endColumn
         );
-        const selectedText = editor.document.getText(
-          editor.selection
-        );
+        const selectedText = editor.document.getText(editor.selection);
         return selectedText;
       } catch (e) {
         return e instanceof Error ? e.message : "Error selecting text";
@@ -227,7 +254,7 @@ export function createTools(openAIApiKey: string, serperAPIKey: string | undefin
 
   const replace = new DynamicTool({
     name: "replace",
-    description: `Replaces text in a specified range in a file. Expects a JSON with this type  path: string; startLine: number; startColumn: number; endLine: number; endColumn: number; newText: string; .`,
+    description: `Replaces text in a specified range in a file. Use this when you need to edit a file. Expects a JSON with this type  path: string; startLine: number; startColumn: number; endLine: number; endColumn: number; newText: string; .`,
     func: async (arg) => {
       try {
         const { path, startLine, startColumn, endLine, endColumn, newText } =
@@ -245,9 +272,7 @@ export function createTools(openAIApiKey: string, serperAPIKey: string | undefin
         const replaceDocument = await vscode.workspace.openTextDocument(
           replaceFileUri
         );
-        editor = await vscode.window.showTextDocument(
-          replaceDocument
-        );
+        editor = await vscode.window.showTextDocument(replaceDocument);
         await editor.edit((editBuilder) => {
           editBuilder.replace(
             new vscode.Range(startLine, startColumn, endLine, endColumn),
@@ -266,13 +291,14 @@ export function createTools(openAIApiKey: string, serperAPIKey: string | undefin
     description: `Copies text in a specified range in a file. Expects a JSON with this type  path: string; startLine: number; startColumn: number; endLine: number; endColumn: number; .`,
     func: async (arg) => {
       try {
-        const { path, startLine, startColumn, endLine, endColumn } = arg as unknown as {
-          path: string;
-          startLine: number;
-          startColumn: number;
-          endLine: number;
-          endColumn: number;
-        };
+        const { path, startLine, startColumn, endLine, endColumn } =
+          arg as unknown as {
+            path: string;
+            startLine: number;
+            startColumn: number;
+            endLine: number;
+            endColumn: number;
+          };
         const workspaceFolder =
           vscode.workspace.workspaceFolders?.[0].uri.fsPath;
         const copyFileUri = vscode.Uri.file(workspaceFolder + "/" + path);
@@ -299,13 +325,14 @@ export function createTools(openAIApiKey: string, serperAPIKey: string | undefin
     description: `Cuts text in a specified range in a file. Expects a JSON with this type path: string; startLine: number; startColumn: number; endLine: number; endColumn: number;.`,
     func: async (arg) => {
       try {
-        const { path, startLine, startColumn, endLine, endColumn } = arg as unknown as {
-          path: string;
-          startLine: number;
-          startColumn: number;
-          endLine: number;
-          endColumn: number;
-        };
+        const { path, startLine, startColumn, endLine, endColumn } =
+          arg as unknown as {
+            path: string;
+            startLine: number;
+            startColumn: number;
+            endLine: number;
+            endColumn: number;
+          };
         if (!editor) {
           throw new Error("No active editor");
         }
@@ -352,9 +379,7 @@ export function createTools(openAIApiKey: string, serperAPIKey: string | undefin
         );
         const pasteText = await vscode.env.clipboard.readText();
         const pasteRange = new vscode.Range(line, column, line, column);
-        editor = await vscode.window.showTextDocument(
-          pasteDocument
-        );
+        editor = await vscode.window.showTextDocument(pasteDocument);
         await editor.edit((editBuilder) => {
           if (!editor) {
             throw new Error("No active editor");
@@ -367,7 +392,7 @@ export function createTools(openAIApiKey: string, serperAPIKey: string | undefin
       }
     },
   });
-  
+
   const runInTerminal = new DynamicTool({
     name: "runInTerminal",
     description: `Runs a command in the terminal. Expects the command to be executed`,
@@ -379,7 +404,7 @@ export function createTools(openAIApiKey: string, serperAPIKey: string | undefin
           "Allow",
           "Cancel"
         );
-        
+
         if (confirmation !== "Allow") {
           return "user cancelled command";
         }
@@ -405,14 +430,14 @@ export function createTools(openAIApiKey: string, serperAPIKey: string | undefin
             }
           );
         });
-        
+
         return output as string;
       } catch (e) {
         return e instanceof Error ? e.message : "Error running command";
       }
     },
   });
-  
+
   const getSyntaxErrors = new DynamicTool({
     name: "getSyntaxErrors",
     description: `Gets syntax errors in a file. ALWAYS run this after code changes. Expects the relative path as input.`,
@@ -422,7 +447,10 @@ export function createTools(openAIApiKey: string, serperAPIKey: string | undefin
           vscode.workspace.workspaceFolders?.[0].uri.fsPath;
         const fileUri = vscode.Uri.file(workspaceFolder + "/" + path);
         const diagnostics = vscode.languages.getDiagnostics(fileUri);
-        const errors = diagnostics.filter((diagnostic) => diagnostic.severity === vscode.DiagnosticSeverity.Error);
+        const errors = diagnostics.filter(
+          (diagnostic) =>
+            diagnostic.severity === vscode.DiagnosticSeverity.Error
+        );
         const errorMessages = errors.map((error) => {
           const range = error.range;
           const line = range.start.line;
@@ -431,7 +459,7 @@ export function createTools(openAIApiKey: string, serperAPIKey: string | undefin
           return {
             line,
             column,
-            message
+            message,
           };
         });
         return JSON.stringify(errorMessages);
@@ -452,6 +480,7 @@ export function createTools(openAIApiKey: string, serperAPIKey: string | undefin
     paste,
     runInTerminal,
     getSyntaxErrors,
+    readFile
   ];
 
   const readOnlyTools = [
@@ -461,12 +490,13 @@ export function createTools(openAIApiKey: string, serperAPIKey: string | undefin
     select,
     getSyntaxErrors,
     browser,
+    questionFile,
     ...extraTools,
   ];
-  
-  if(!autonomous) {
+
+  if (!autonomous) {
     return readOnlyTools;
   }
-  
+
   return [...autonomousTools, ...readOnlyTools];
 }

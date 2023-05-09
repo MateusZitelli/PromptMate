@@ -14,7 +14,7 @@ specifiers:
   eslint: ^8.38.0
   glob: ^8.1.0
   html-loader: ^4.2.0
-  langchain: ^0.0.56
+  langchain: ^0.0.57
   micromark: ^3.1.0
   mocha: ^10.2.0
   node-fetch: ^3.3.1
@@ -27,7 +27,7 @@ dependencies:
   axios: 0.26.1
   cheerio: 1.0.0-rc.12
   dotenv: 16.0.3
-  langchain: 0.0.56_riadzwtpmpkkst6cn4t72dbzma
+  langchain: 0.0.57_riadzwtpmpkkst6cn4t72dbzma
   micromark: 3.1.0
   node-fetch: 3.3.1
 
@@ -1612,8 +1612,8 @@ packages:
     engines: {node: '>=6'}
     dev: false
 
-  /langchain/0.0.56_riadzwtpmpkkst6cn4t72dbzma:
-    resolution: {integrity: sha512-5+UCYhKwg//fm2Gb32EpKQiuNlJqt2YdKIFyZRCEyqMSmTd1Cu4QcdRMjFfl7IVwyY3xrUC7dQIMsJ6k+TsRrA==}
+  /langchain/0.0.57_riadzwtpmpkkst6cn4t72dbzma:
+    resolution: {integrity: sha512-Ik8SGMzl6woXkqmdWnNIqY7ds3+y1b6FLYDhCXpTT3fHHD+vsNgiapAAdJ/lkThnYQ0y0i3gtv1pHbjfsYS5qw==}
     engines: {node: '>=18'}
     peerDependencies:
       '@aws-sdk/client-lambda': ^3.310.0

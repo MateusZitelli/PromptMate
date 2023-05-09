@@ -1,17 +1,24 @@
-import { PromptTemplate } from "langchain";
+import { PromptTemplate } from "langchain/prompts";
 
 const _DEFAULT_SUMMARIZER_TEMPLATE = `Progressively summarize the lines of conversation provided, adding onto the previous summary returning a new summary.
 
 EXAMPLE
 Current summary:
-The human asks to list the files in the folder ./src and a list of files of a JavaScript project was returned.
+- Human asked for the list of files in the folder ./src
+- Agent used the tool to list files and answered with a list of files of a JavaScript VS Code extension
+- Human asked what this project was about
+- Agent used the tool to read a file and read the extension.ts file, and answered with a description of the project
+
 
 New lines of conversation:
-Human: Explain what this project is about.
-AI: This project is a VS Code extension called PromptMate.
+Human: Implement tests for extension.ts
+AI: I just create extension.test.ts with tests for your file.
 
 New summary:
-The human asks to list the files in the folder ./src and a list of files of a JavaScript VS Code extension called PromptMate.
+- Human was exploring and understanding the project
+- Agent listed the ./src folder, identified it is a VS Code extension, and read the extension.ts file and answered with a description of the project
+- Human: Implement tests for extension.ts
+- AI: I just create extension.test.ts with tests for extensions.ts.
 END OF EXAMPLE
 
 Current summary:

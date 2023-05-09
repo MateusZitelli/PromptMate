@@ -82,7 +82,7 @@ export async function activate(context: vscode.ExtensionContext) {
         handleToggleMarkdownEvent();
       }else if (message.type === "deleteMessage") {
         conversationHistory.splice(message.index, 1);
-        conversationAgent?.getMemory().chatHistory.messages.splice(message.index, 1);
+        (await conversationAgent?.getMemory().chatHistory.getMessages())?.splice(message.index, 1);
       }else if (message.type === "updateAutonomous") {
         autonomous = message.autonomous;
         context.globalState.update("autonomous", message.autonomous);
